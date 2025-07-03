@@ -8,7 +8,7 @@ from google.generativeai.types import GenerationConfig
 
 
 # ✅ 設定 Gemini API 金鑰
-genai.configure(api_key="YOUR_GEMINI_API_KEY")  # ← 替換為你的金鑰
+genai.configure(api_key="YOUR_GEMINI_API_KEY")  # ← 請替換
 
 
 # ✅ Gemini 嵌入函數
@@ -28,7 +28,7 @@ class GeminiEmbeddingFunction(EmbeddingFunction):
         return embeddings
 
 
-# ✅ 從 PDF 提取全文
+# ✅ 讀取 PDF 文字
 def extract_text_from_pdf(pdf_path: str) -> str:
     full_text = ""
     with pdfplumber.open(pdf_path) as pdf:
@@ -39,7 +39,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     return full_text.strip()
 
 
-# ✅ 切分語意段落 chunks
+# ✅ 分段（按語意句子 + overlap）
 def split_text(text: str, max_chunk_size=500, overlap=100) -> list:
     text = re.sub(r'\s+', ' ', text).strip()
     sentence_delimiters = re.compile(r'(?<=[.!?。！？])\s')
@@ -64,7 +64,7 @@ def split_text(text: str, max_chunk_size=500, overlap=100) -> list:
     return chunks
 
 
-# ✅ 建立 Chroma 向量資料庫
+# ✅ 建立 ChromaDB
 def create_chroma_db(documents, path="./chroma_db", name="pdf_chunks"):
     client = chromadb.Client(Settings(chroma_db_impl="duckdb+parquet", persist_directory=path))
     embedding_function = GeminiEmbeddingFunction()
@@ -72,7 +72,6 @@ def create_chroma_db(documents, path="./chroma_db", name="pdf_chunks"):
 
     ids = [f"doc_{i}" for i in range(len(documents))]
     collection.add(documents=documents, ids=ids)
-
     client.persist()
     return collection
 
@@ -83,7 +82,7 @@ def get_relevant_passage(query: str, db, n_results: int = 3) -> list:
     return results["documents"][0]
 
 
-# ✅ 建立 RAG prompt
+# ✅ 建立 prompt（RAG）
 def make_rag_prompt(query: str, relevant_passages: list) -> str:
     context = "\n\n".join(relevant_passages)
     prompt = (
@@ -95,7 +94,7 @@ def make_rag_prompt(query: str, relevant_passages: list) -> str:
     return prompt
 
 
-# ✅ 使用 Gemini 產生回答（支援溫度與 token 設定）
+# ✅ 回答生成（支援溫度與 token 控制）
 def generate_answer(prompt: str, temperature: float = 0.7, max_tokens: int = 512) -> str:
     config = GenerationConfig(
         temperature=temperature,
@@ -109,9 +108,9 @@ def generate_answer(prompt: str, temperature: float = 0.7, max_tokens: int = 512
     return response.text.strip()
 
 
-# ✅ 主流程整合
+# ✅ 主程式（含 temperature 實驗）
 if __name__ == "__main__":
-    pdf_path = "your_file.pdf"  # ← 替換為你的 PDF 檔案
+    pdf_path = "your_file.pdf"  # ← 替換為你的 PDF 路徑
     full_text = extract_text_from_pdf(pdf_path)
     print("✅ PDF 讀取完成")
 
@@ -126,17 +125,14 @@ if __name__ == "__main__":
         if user_question.lower() == 'exit':
             break
 
-        try:
-            temperature = float(input("🌡️ Temperature (0.0 ~ 1.0, 預設 0.7)：") or 0.7)
-            max_tokens = int(input("🔢 Max Tokens (預設 512)：") or 512)
-        except ValueError:
-            print("❗ 輸入錯誤，使用預設值")
-            temperature = 0.7
-            max_tokens = 512
-
         top_chunks = get_relevant_passage(user_question, collection, n_results=3)
         prompt = make_rag_prompt(user_question, top_chunks)
-        answer = generate_answer(prompt, temperature=temperature, max_tokens=max_tokens)
 
-        print("\n🤖 Gemini 回答：\n")
-        print(answer)
+        print("\n🧪 Gemini 回答比較（不同 temperature）：")
+        for temp in [0.0, 0.5, 1.0]:
+            print(f"\n🌡️ Temperature = {temp}")
+            try:
+                answer = generate_answer(prompt, temperature=temp, max_tokens=300)
+                print(f"🤖 回答:\n{answer}")
+            except Exception as e:
+                print(f"❌ 發生錯誤：{e}")
